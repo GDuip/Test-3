@@ -1,0 +1,397 @@
+getgenv().BypassLoaded then
+    getgenv().BypassLoaded = true
+else
+    return warn("Already loaded bypass")
+end
+
+if not LPH_OBFUSCATED then
+    getfenv().LPH_NO_VIRTUALIZE = function(f) return f end
+end
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Handshake = ReplicatedStorage.Remotes.CharacterSoundEvent
+local Hooks = {}
+local HandshakeInts = {}
+local BannedPlayers = {}
+local BanDuration = 2592000 -- 1 month in seconds
+
+local function deepFreeze(obj)
+    if type(obj) ~= "table" then
+        return obj
+    end
+    local frozen = {}
+    for k, v in pairs(obj) do
+        frozen[deepFreeze(k)] = deepFreeze(v)
+    end
+    return setmetatable(frozen, {
+        __index = function(t, k)
+            return rawget(t, k)
+        end,
+        __newindex = function(t, k, v)
+            error("Cannot modify frozen table", 2)
+        end,
+        __metatable = false,
+    })
+end
+
+local function isFunctionTampered(func)
+    if typeof(func) ~= "function" then
+        return false
+    end
+    local info = debug.info(func, "s")
+    if not info then
+        return false
+    end
+    local upvalues = debug.getupvalues(func)
+    for _, upvalue in ipairs(upvalues) do
+        if type(upvalue) == "function" and debug.info(upvalue, "s") then
+            return true
+        end
+    end
+    return false
+end
+
+local function monitorFunction(func)
+    if typeof(func) ~= "function" then
+        return
+    end
+    local original = func
+    local proxy = newproxy(true)
+    local meta = {
+        __call = function(_, ...)
+            if isFunctionTampered(original) then
+                local player = game:GetService("Players").LocalPlayer
+                local playerId = player.UserId
+                if BannedPlayers[playerId] then
+                    BannedPlayers[playerId] = os.time() + math.huge
+                    player:Kick("Permanent ban for cheating.")
+                else
+                    BannedPlayers[playerId] = os.time() + BanDuration
+                    player:Kick("Banned for 1 month for cheating.")
+                end
+                
+                local success, err = pcall(function()
+                    local HttpService = game:GetService("HttpService")
+                    local data = HttpService:JSONEncode(BannedPlayers)
+                    HttpService:PostAsync("YOUR_WEBHOOK_URL", data)
+                end)
+                if not success then
+                    warn("Failed to send ban data:", err)
+                end
+                error("Function Tampering Detected", 2)
+            end
+            return original(...)
+        end,
+        __metatable = false,
+    }
+    setmetatable(proxy, meta)
+    return proxy
+end
+
+LPH_NO_VIRTUALIZE(function()
+    for i, v in getgc() do
+        if typeof(v) == "function" and islclosure(v) then
+            if (#getprotos(v) == 1) and table.find(getconstants(getproto(v, 1)), 4000001) then
+                hookfunction(v, function()
+                    local player = game:GetService("Players").LocalPlayer
+                    local playerId = player.UserId
+                    if BannedPlayers[playerId] then
+                        BannedPlayers[playerId] = os.time() + math.huge
+                        player:Kick("Permanent ban for cheating.")
+                    else
+                        BannedPlayers[playerId] = os.time() + BanDuration
+                        player:Kick("Banned for 1 month for cheating.")
+                    end
+                    
+                    local success, err = pcall(function()
+                        local HttpService = game:GetService("HttpService")
+                        local data = HttpService:JSONEncode(BannedPlayers)
+                        HttpService:PostAsync("YOUR_WEBHOOK_URL", data)
+                    end)
+                    if not success then
+                        warn("Failed to send ban data:", err)
+                    end
+                    error("Anti-Cheat Function Hooked", 2)
+                end)
+            end
+        end
+    end
+end)()
+
+Hooks.__namecall = hookmetamethod(game, "__namecall", LPH_NO_VIRTUALIZE(function(self, ...)
+    local Method = getnamecallmethod()
+    local Args = {...}
+
+    if not checkcaller() and (self == Handshake) and (Method == "fireServer") and (string.find(Args[1], "AC")) then
+        if (#HandshakeInts == 0) then
+            HandshakeInts = {table.unpack(Args[2], 2, 18)}
+        else
+            for i, v in HandshakeInts do
+                Args[2][i + 1] = v
+            end
+        end
+    end
+
+    return Hooks.__namecall(self, ...)
+end))
+
+task.wait(1)
+
+local blockreachon = false
+local customblockreach = 5
+local blocktransparency = 0.5
+local antiblockon = false
+
+local AutoFollowQb = false
+local followCarrierTask = nil
+local maxFollowDistance = 100
+local predictionInterval = 0
+local predictionFactor = 0.5
+local minPredictDistance = 20
+local tackleOffset = 2
+local player = game:GetService("Players").LocalPlayer
+
+local userInputService = game:GetService("UserInputService")
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local config = { DefaultSpeed = 20, MaxSpeed = 100 }
+local moveToUsing = {}
+local walkspeedEnabled = false
+local customWalkSpeed = config.DefaultSpeed
+
+if not LPH_OBFUSCATED then
+    getfenv().LPH_NO_VIRTUALIZE = function(f) return f end
+    getfenv().LPH_JIT_MAX = function(f) return f end
+end
+
+if getgenv().bleach then warn("Bleachhack is already executed") return end
+getgenv().bleach = true
+
+loadstring([[
+    function LPH_NO_VIRTUALIZE(f) return f end;
+]])();
+
+local debris = game:GetService("Debris")
+local contentProvider = game:GetService("ContentProvider")
+local scriptContext = game:GetService("ScriptContext")
+local players = game:GetService("Players")
+local tweenService = game:GetService("TweenService")
+local statsService = game:GetService("Stats")
+local runService = game:GetService("RunService")
+local userInputService = game:GetService("UserInputService")
+local replicatedStorage = game:GetService("ReplicatedStorage")
+local httpService = game:GetService("HttpService")
+local starterGui = game:GetService("StarterGui")
+
+local player = players.LocalPlayer
+local mouse = player:GetMouse()
+local camera = workspace.CurrentCamera
+local values = replicatedStorage:FindFirstChild("Values")
+
+local IS_PRACTICE = game.PlaceId == 8206123457
+local IS_SOLARA = string.match(getexecutorname(), "Solara")
+local AC_BYPASS = IS_PRACTICE
+
+local moveToUsing = {}
+
+if not values or IS_PRACTICE then
+    if replicatedStorage:FindFirstChild("Values") then
+        replicatedStorage:FindFirstChild("Values"):Destroy()
+    end
+    values = Instance.new("Folder")
+    local status = Instance.new("StringValue")
+    status.Name = "Status"
+    status.Value = "InPlay"
+    status.Parent = values
+    values.Parent = replicatedStorage
+    values.Name = "Values"
+end
+
+if not LPH_OBFUSCATED then
+    getfenv().LPH_NO_VIRTUALIZE = function(f) return f end
+end
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Handshake = ReplicatedStorage.Remotes.CharacterSoundEvent
+local Hooks = {}
+local HandshakeInts = {}
+
+LPH_NO_VIRTUALIZE(function()
+    for i, v in getgc() do
+        if typeof(v) == "function" and islclosure(v) then
+            if (#getprotos(v) == 1) and table.find(getconstants(getproto(v, 1)), 4000001) then
+                hookfunction(v, function()
+                    local player = game:GetService("Players").LocalPlayer
+                    local playerId = player.UserId
+                    if BannedPlayers[playerId] then
+                        BannedPlayers[playerId] = os.time() + math.huge
+                        player:Kick("Permanent ban for cheating.")
+                    else
+                        BannedPlayers[playerId] = os.time() + BanDuration
+                        player:Kick("Banned for 1 month for cheating.")
+                    end
+                    
+                    local success, err = pcall(function()
+                        local HttpService = game:GetService("HttpService")
+                        local data = HttpService:JSONEncode(BannedPlayers)
+                        HttpService:PostAsync("YOUR_WEBHOOK_URL", data)
+                    end)
+                    if not success then
+                        warn("Failed to send ban data:", err)
+                    end
+                    error("Anti-Cheat Function Hooked", 2)
+                end)
+            end
+        end
+    end
+end)()
+
+Hooks.__namecall = hookmetamethod(game, "__namecall", LPH_NO_VIRTUALIZE(function(self, ...)
+    local Method = getnamecallmethod()
+    local Args = {...}
+
+    if not checkcaller() and (self == Handshake) and (Method == "fireServer") and (string.find(Args[1], "AC")) then
+        if (#HandshakeInts == 0) then
+            HandshakeInts = {table.unpack(Args[2], 2, 18)}
+        else
+            for i, v in HandshakeInts do
+                Args[2][i + 1] = v
+            end
+        end
+    end
+
+    return Hooks.__namecall(self, ...)
+end))
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local Handshake = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CharacterSoundEvent")
+local LastCheck = nil
+local LocalPlayer = Players.LocalPlayer
+local Hooks = {}
+local HandshakeInts = {}
+
+Hooks.__namecall = hookmetamethod(game, "__namecall", function(self, ...)
+    local Method = getnamecallmethod()
+    local Args = {...}
+
+    if not checkcaller() and (self == Handshake) and (Method == "fireServer") and (string.find(Args[1], "AC")) then
+        if (#HandshakeInts == 0) then
+            HandshakeInts = {table.unpack(Args[2], 2, 18)}
+        else
+            for i, v in HandshakeInts do
+                Args[2][i + 1] = v
+            end
+        end
+    end
+
+    return Hooks.__namecall(self, ...)
+end)
+
+for Index, Function in next, getgc(true) do
+    if typeof(Function) == "function" then
+        local Script = debug.info(Function, "s")
+        if Script and string.find(Script, "PlayerModule.LocalScript") then
+            local Upvalues = debug.getupvalues(Function)
+            for I, Upvalue in next, Upvalues do
+                if type(Upvalue) == "number" and Upvalue > 4000000 then
+                    hookfunction(Function, function()
+                        local player = game:GetService("Players").LocalPlayer
+                        local playerId = player.UserId
+                        if BannedPlayers[playerId] then
+                            BannedPlayers[playerId] = os.time() + math.huge
+                            player:Kick("Permanent ban for cheating.")
+                        else
+                            BannedPlayers[playerId] = os.time() + BanDuration
+                            player:Kick("Banned for 1 month for cheating.")
+                        end
+                        
+                        local success, err = pcall(function()
+                            local HttpService = game:GetService("HttpService")
+                            local data = HttpService:JSONEncode(BannedPlayers)
+                            HttpService:PostAsync("YOUR_WEBHOOK_URL", data)
+                        end)
+                        if not success then
+                            warn("Failed to send ban data:", err)
+                        end
+                        error("Anti-Cheat Function Hooked", 2)
+                    end)
+                end
+            end
+        end
+    end
+end
+
+task.spawn(function()
+    while task.wait(0.4) do
+        if LastCheck and (tick() - LastCheck) >= 20 then
+            LocalPlayer:Kick("[YON-HUB]: Bypass timed out. Bypass initialization aborted.")
+            task.wait(3)
+            game:Shutdown()
+        end
+    end
+end)
+
+print("[YON-HUB]: Bypass has been loaded.")
+
+game.DescendantAdded:Connect(function(Object)
+    if Object.Name == "LocalScript" then
+        warn("AC Script: ", Object:GetFullName())
+        Object.Disabled = true
+        Object:Destroy()
+    end
+end)
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Remote = ReplicatedStorage:WaitForChild("Remotes").CharacterSoundEvent
+
+local function __call(T, v1, v2, v3, v4, v5, v6)
+    warn(v1, v2, v3, v4, v5, v6)
+    if ((v1 and v1 ~= v2) and v2 ~= v3) then
+        T[math.round(((T[11] / 90) ^ (1 / 3) - 112) / -9) + 1] = T[math.floor(math.sqrt(v3 - 555))]
+        return T
+    end
+end
+
+local Handshake = setmetatable({
+    {},
+    math.random(1000000, 100000000),
+    math.random(1000000, 100000000),
+    math.random(1000000, 100000000),
+    math.random(1000000, 100000000),
+    math.random(1000000, 100000000),
+    math.random(1000000, 100000000),
+    math.random(1000000, 100000000),
+    math.random(1000000, 100000000),
+    math.random(1000000, 100000000),
+    math.random(1000000, 100000000),
+    math.random(1000000, 100000000),
+    math.random(1000000, 100000000),
+    math.random(1000000, 100000000),
+    math.random(1000000, 100000000),
+    math.random(1000000, 100000000),
+    math.random(1000000, 100000000),
+    math.random(1000000, 100000000),
+    newproxy(true)
+}, {__call = __call})
+
+Remote.OnClientEvent:Connect(function(Method, _, NewArgs)
+    if Method == "💱AC" then
+        if NewArgs then
+            for i = 1, #NewArgs do
+                Handshake[i + 1] = NewArgs[i]
+            end
+        end
+    end
+end)
+
+task.wait(4)
+
+task.spawn(function()
+    while task.wait(0.5) do
+        Remote:fireServer("💱AC", Handshake(887, 782, 780, 648, 659), nil)
+    end
+end)
