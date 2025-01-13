@@ -1,0 +1,443 @@
+-- a anti cheat system module-
+
+--WARNING THIS IS IN DEVELOPMENT AND EXPERIMENTAL
+THERE HAS BEEN NO TEST STILL FIXING THING ESPECT BUGS AND ISSUES MAKING COMPLETELY UNUSABLE--
+--I just started this project today so dont get mad--
+
+local AntiCheat = {}
+
+-- Configuration
+local DETECTION_THRESHOLD = 0.8 -- Threshold for anomaly detection (0-1)
+local BAN_DURATION = 3600 -- Ban duration in seconds
+local REPORT_THRESHOLD = 5 -- Number of reports needed to trigger a review
+local MAX_REPORTS_PER_PLAYER = 10 -- Maximum reports a player can submit
+local FUNCTION_MONITOR_INTERVAL = 5 -- Interval for function monitoring in seconds
+local MODULE_MONITOR_INTERVAL = 10 -- Interval for module monitoring in seconds
+local ACTIVITY_TRACKING_INTERVAL = 2 -- Interval for tracking player activity in seconds
+local ML_CHECK_INTERVAL = 15 -- Interval for machine learning checks in seconds
+
+-- Data Storage
+local BannedPlayers = {}
+local PlayerReports = {}
+local FunctionHashes = {}
+local ModuleHashes = {}
+local FunctionMonitors = {}
+local ModuleMonitors = {}
+local PlayerActivity = {}
+local GameFunctions = {}
+local Metamethods = {}
+local FunctionHooks = {}
+
+-- Utility Functions
+local function deepFreeze(tableToFreeze)
+    if type(tableToFreeze) ~= "table" then return tableToFreeze end
+    local mt = {
+        __index = tableToFreeze,
+        __newindex = function() error("Attempt to modify a frozen table", 2) end,
+        __metatable = false,
+    }
+    return setmetatable({}, mt)
+end
+
+local function generateHash(data)
+    local hash = 0
+    local len = #data
+    for i = 1, len do
+        hash = (hash * 31 + string.byte(data, i)) % 2^32
+    end
+    return hash
+end
+
+local function obfuscateString(str)
+    local obfuscated = ""
+    for i = 1, #str do
+        local char = string.byte(str, i)
+        obfuscated = obfuscated .. string.char(char + 5)
+    end
+    return obfuscated
+end
+
+local function deobfuscateString(str)
+    local deobfuscated = ""
+    for i = 1, #str do
+        local char = string.byte(str, i)
+        deobfuscated = deobfuscated .. string.char(char - 5)
+    end
+    return deobfuscated
+end
+
+local function isFunctionTampered(func, originalHash)
+    if type(func) ~= "function" then return true end
+    local funcDump = string.dump(func)
+    local currentHash = generateHash(funcDump)
+    return currentHash ~= originalHash
+end
+
+local function secureHookFunction(func, hookFunction)
+    local originalFunc = func
+    local hookedFunc = function(...)
+        hookFunction(...)
+        return originalFunc(...)
+    end
+    return hookedFunc
+end
+
+local function checkAndBan(player, reason)
+    if BannedPlayers[player.UserId] then return end
+    BannedPlayers[player.UserId] = {
+        BanTime = os.time(),
+        Reason = reason,
+        Duration = BAN_DURATION
+    }
+    player:Kick(reason)
+    print("Player " .. player.Name .. " banned for: " .. reason)
+end
+
+local function isBanned(player)
+    local banInfo = BannedPlayers[player.UserId]
+    if banInfo then
+        if os.time() - banInfo.BanTime < banInfo.Duration then
+            return true, banInfo.Reason
+        else
+            BannedPlayers[player.UserId] = nil
+            return false, nil
+        end
+    end
+    return false, nil
+end
+
+-- Machine Learning (Placeholder - Needs actual ML implementation)
+local function analyzePlayerBehavior(player)
+    -- Placeholder: Analyze player activity for anomalies
+    local activity = PlayerActivity[player.UserId]
+    if not activity then return 0 end
+    local score = 0
+    if activity.Speed > 1.5 then score = score + 0.3 end
+    if activity.ResourceManipulation > 0.5 then score = score + 0.4 end
+    if activity.UnusualActions > 0.2 then score = score + 0.3 end
+    return score
+end
+
+-- Function Monitoring
+local function monitorFunction(func, funcName)
+    if not func then return end
+    local funcDump = string.dump(func)
+    local originalHash = generateHash(funcDump)
+    FunctionHashes[funcName] = originalHash
+    FunctionMonitors[funcName] = func
+end
+
+local function checkFunctionTampering()
+    for funcName, func in pairs(FunctionMonitors) do
+        local originalHash = FunctionHashes[funcName]
+        if isFunctionTampered(func, originalHash) then
+            for _, player in pairs(game.Players:GetPlayers()) do
+                checkAndBan(player, "Function Tampering Detected: " .. funcName)
+            end
+        end
+    end
+end
+
+-- Module Monitoring
+local function monitorModule(module, moduleName)
+    if not module then return end
+    local moduleSource = module:GetAttribute("Source") or ""
+    local originalHash = generateHash(moduleSource)
+    ModuleHashes[moduleName] = originalHash
+    ModuleMonitors[moduleName] = module
+end
+
+local function checkModuleTampering()
+    for moduleName, module in pairs(ModuleMonitors) do
+        local originalHash = ModuleHashes[moduleName]
+        local currentSource = module:GetAttribute("Source") or ""
+        local currentHash = generateHash(currentSource)
+        if currentHash ~= originalHash then
+            for _, player in pairs(game.Players:GetPlayers()) do
+                checkAndBan(player, "Module Tampering Detected: " .. moduleName)
+            end
+        end
+    end
+end
+
+-- Metamethod Monitoring
+local function hookMetamethod(object, metamethodName)
+    if not object or not metamethodName then return end
+    local mt = getmetatable(object)
+    if not mt then return end
+    local originalMetamethod = mt[metamethodName]
+    if not originalMetamethod then return end
+    local hookedMetamethod = function(...)
+        local result = originalMetamethod(...)
+        local player = game.Players:GetPlayerFromCharacter(object)
+        if player then
+            checkAndBan(player, "Metamethod Tampering Detected: " .. metamethodName)
+        end
+        return result
+    end
+    mt[metamethodName] = hookedMetamethod
+    Metamethods[metamethodName] = {object, originalMetamethod}
+end
+
+local function restoreMetamethods()
+    for metamethodName, data in pairs(Metamethods) do
+        local object, originalMetamethod = data[1], data[2]
+        local mt = getmetatable(object)
+        if mt then
+            mt[metamethodName] = originalMetamethod
+        end
+    end
+    Metamethods = {}
+end
+
+-- Player Reporting
+local function reportPlayer(reporter, reportedPlayer, reason)
+    if not reporter or not reportedPlayer or not reason then return end
+    if reporter == reportedPlayer then return end
+    if (PlayerReports[reporter.UserId] or 0) >= MAX_REPORTS_PER_PLAYER then return end
+    PlayerReports[reporter.UserId] = (PlayerReports[reporter.UserId] or 0) + 1
+    if not PlayerReports[reportedPlayer.UserId] then
+        PlayerReports[reportedPlayer.UserId] = {Reports = 1, Reasons = {reason}}
+    else
+        PlayerReports[reportedPlayer.UserId].Reports = PlayerReports[reportedPlayer.UserId].Reports + 1
+        table.insert(PlayerReports[reportedPlayer.UserId].Reasons, reason)
+    end
+    if PlayerReports[reportedPlayer.UserId].Reports >= REPORT_THRESHOLD then
+        print("Player " .. reportedPlayer.Name .. " has reached the report threshold. Reviewing reports: " .. table.concat(PlayerReports[reportedPlayer.UserId].Reasons, ", "))
+        -- Implement review process here
+    end
+end
+
+-- Game Function Monitoring
+local function monitorGameFunctions()
+    local functionsToMonitor = {
+        game.Players.PlayerAdded,
+        game.Players.PlayerRemoving,
+        game.ReplicatedStorage.RemoteEvent.OnServerEvent,
+        game.ReplicatedStorage.RemoteFunction.OnServerInvoke,
+        game.Workspace.ChildAdded,
+        game.Workspace.ChildRemoved,
+    }
+    for _, func in ipairs(functionsToMonitor) do
+        local funcName = tostring(func)
+        monitorFunction(func, funcName)
+        GameFunctions[funcName] = func
+    end
+end
+
+-- Server-Side Validation
+local function validateAction(player, action, data)
+    if not player or not action then return false end
+    -- Implement server-side validation logic here
+    if action == "Move" then
+        local speed = data.Speed
+        if speed > 10 then
+            checkAndBan(player, "Invalid Move Speed")
+            return false
+        end
+    elseif action == "ResourceChange" then
+        local resource = data.Resource
+        local amount = data.Amount
+        if resource == "Health" and amount > 100 then
+            checkAndBan(player, "Invalid Health Change")
+            return false
+        end
+    end
+    return true
+end
+
+-- Player Activity Tracking
+local function trackPlayerActivity(player, activityType, value)
+    if not player then return end
+    PlayerActivity[player.UserId] = PlayerActivity[player.UserId] or {}
+    PlayerActivity[player.UserId][activityType] = value
+end
+
+-- Function Hooking
+local function hookFunction(func, hookFunction, funcName)
+    if not func or not hookFunction or not funcName then return end
+    local hookedFunc = secureHookFunction(func, hookFunction)
+    FunctionHooks[funcName] = {func, hookedFunc}
+    _G[funcName] = hookedFunc
+end
+
+local function restoreFunctionHooks()
+    for funcName, data in pairs(FunctionHooks) do
+        local originalFunc = data[1]
+        _G[funcName] = originalFunc
+    end
+    FunctionHooks = {}
+end
+
+-- Anti-Cheat Initialization
+function AntiCheat.Initialize()
+    -- Freeze critical tables
+    deepFreeze(BannedPlayers)
+    deepFreeze(PlayerReports)
+    deepFreeze(FunctionHashes)
+    deepFreeze(ModuleHashes)
+    deepFreeze(FunctionMonitors)
+    deepFreeze(ModuleMonitors)
+    deepFreeze(PlayerActivity)
+    deepFreeze(GameFunctions)
+    deepFreeze(Metamethods)
+    deepFreeze(FunctionHooks)
+
+    -- Monitor game functions
+    monitorGameFunctions()
+
+    -- Monitor critical modules
+    for _, module in ipairs(game.ServerScriptService:GetDescendants()) do
+        if module:IsA("ModuleScript") then
+            monitorModule(module, module.Name)
+        end
+    end
+
+    -- Hook metamethods
+    for _, player in ipairs(game.Players:GetPlayers()) do
+        if player.Character then
+            hookMetamethod(player.Character, "__index")
+            hookMetamethod(player.Character, "__newindex")
+        end
+    end
+
+    -- Monitor new scripts
+    game.DescendantAdded:Connect(function(descendant)
+        if descendant:IsA("Script") or descendant:IsA("LocalScript") then
+            for _, player in ipairs(game.Players:GetPlayers()) do
+                checkAndBan(player, "New Script Added: " .. descendant.Name)
+            end
+        elseif descendant:IsA("ModuleScript") then
+            monitorModule(descendant, descendant.Name)
+        end
+    end)
+
+    -- Periodic checks
+    task.spawn(function()
+        while true do
+            task.wait(FUNCTION_MONITOR_INTERVAL)
+            checkFunctionTampering()
+        end
+    end)
+
+    task.spawn(function()
+        while true do
+            task.wait(MODULE_MONITOR_INTERVAL)
+            checkModuleTampering()
+        end
+    end)
+
+    -- Player connection handling
+    game.Players.PlayerAdded:Connect(function(player)
+        player.CharacterAdded:Connect(function(character)
+            hookMetamethod(character, "__index")
+            hookMetamethod(character, "__newindex")
+        end)
+        task.spawn(function()
+            while player and player.Parent do
+                task.wait(ML_CHECK_INTERVAL)
+                local behaviorScore = analyzePlayerBehavior(player)
+                if behaviorScore >= DETECTION_THRESHOLD then
+                    checkAndBan(player, "Unusual Behavior Detected")
+                end
+            end
+        end)
+    end)
+
+    game.Players.PlayerRemoving:Connect(function(player)
+        PlayerActivity[player.UserId] = nil
+        PlayerReports[player.UserId] = nil
+    end)
+
+    -- Server-side validation example
+    game.ReplicatedStorage.RemoteEvent.OnServerEvent:Connect(function(player, action, data)
+        if not validateAction(player, action, data) then
+            return
+        end
+        -- Process valid action
+    end)
+
+    -- Example of player reporting
+    game.ReplicatedStorage.ReportPlayerEvent.OnServerEvent:Connect(function(reporter, reportedPlayer, reason)
+        reportPlayer(reporter, reportedPlayer, reason)
+    end)
+
+    -- Example of player activity tracking
+    game.ReplicatedStorage.TrackActivityEvent.OnServerEvent:Connect(function(player, activityType, value)
+        trackPlayerActivity(player, activityType, value)
+    end)
+
+    -- Ban check loop
+    task.spawn(function()
+        while true do
+            task.wait(10)
+            for _, player in ipairs(game.Players:GetPlayers()) do
+                local isBanned, reason = isBanned(player)
+                if isBanned then
+                    player:Kick(reason)
+                end
+            end
+        end
+    end)
+
+    -- Activity tracking loop
+    task.spawn(function()
+        while true do
+            task.wait(ACTIVITY_TRACKING_INTERVAL)
+            for _, player in ipairs(game.Players:GetPlayers()) do
+                if player.Character and player.Character:FindFirstChild("Humanoid") then
+                    local humanoid = player.Character:FindFirstChild("Humanoid")
+                    local speed = humanoid.WalkSpeed
+                    trackPlayerActivity(player, "Speed", speed)
+                    -- Example of tracking resource manipulation (replace with actual game logic)
+                    local health = humanoid.Health
+                    trackPlayerActivity(player, "ResourceManipulation", health)
+                    -- Example of tracking unusual actions (replace with actual game logic)
+                    local unusualActions = 0
+                    trackPlayerActivity(player, "UnusualActions", unusualActions)
+                end
+            end
+        end
+    end)
+
+    -- Hooking os.execute and debug functions
+    hookFunction(os.execute, function()
+        for _, player in ipairs(game.Players:GetPlayers()) do
+            checkAndBan(player, "Attempted os.execute call")
+        end
+    end, "os.execute")
+
+    hookFunction(debug.getinfo, function()
+        for _, player in ipairs(game.Players:GetPlayers()) do
+            checkAndBan(player, "Attempted debug.getinfo call")
+        end
+    end, "debug.getinfo")
+
+    hookFunction(newcclosure, function()
+        for _, player in ipairs(game.Players:GetPlayers()) do
+            checkAndBan(player, "Attempted newcclosure call")
+        end
+    end, "newcclosure")
+
+    hookFunction(debug.setmetatable, function()
+        for _, player in ipairs(game.Players:GetPlayers()) do
+            checkAndBan(player, "Attempted debug.setmetatable call")
+        end
+    end, "debug.setmetatable")
+
+    hookFunction(string.dump, function()
+        for _, player in ipairs(game.Players:GetPlayers()) do
+            checkAndBan(player, "Attempted string.dump call")
+        end
+    end, "string.dump")
+
+    print("Anti-Cheat System Initialized")
+end
+
+function AntiCheat.Shutdown()
+    restoreMetamethods()
+    restoreFunctionHooks()
+    print("Anti-Cheat System Shutdown")
+end
+
+return AntiCheat
